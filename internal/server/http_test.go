@@ -12,6 +12,7 @@ import (
 
 	"github.com/unionai/idd-sandbox/internal/app"
 	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 func TestHandlerPostDeploymentsSuccess(t *testing.T) {
@@ -25,7 +26,7 @@ func TestHandlerPostDeploymentsSuccess(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusCreated)
 	}
-	var deployment deploymentResponse
+	var deployment types.Deployment
 	decodeJSON(t, body, &deployment)
 	if deployment.ID != "dep_123" {
 		t.Fatalf("ID = %q, want dep_123", deployment.ID)
@@ -90,7 +91,7 @@ func TestHandlerGetDeploymentSuccessAndNotFound(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusOK)
 	}
-	var found deploymentResponse
+	var found types.Deployment
 	decodeJSON(t, body, &found)
 	if found.ID != "dep_123" {
 		t.Fatalf("found ID = %q, want dep_123", found.ID)
@@ -106,14 +107,14 @@ func TestHandlerGetDeploymentSuccessAndNotFound(t *testing.T) {
 
 func TestHandlerGetDeploymentEventsSuccessAndNotFound(t *testing.T) {
 	handler := NewHandler(&fakeDeploymentsUseCase{
-		events: []deployments.DeploymentEvent{validEvent()},
+		events: []types.DeploymentEvent{validEvent()},
 	})
 
 	resp, body := httpRequest(t, handler, http.MethodGet, "/deployments/dep_123/events", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusOK)
 	}
-	var events []eventResponse
+	var events []types.DeploymentEvent
 	decodeJSON(t, body, &events)
 	if len(events) != 1 {
 		t.Fatalf("events len = %d, want 1", len(events))
@@ -131,40 +132,40 @@ func TestHandlerGetDeploymentEventsSuccessAndNotFound(t *testing.T) {
 }
 
 type fakeDeploymentsUseCase struct {
-	create     deployments.CreateDeployment
-	deployment deployments.Deployment
-	events     []deployments.DeploymentEvent
+	create     types.CreateDeployment
+	deployment types.Deployment
+	events     []types.DeploymentEvent
 	createErr  error
 	findErr    error
 	eventsErr  error
 }
 
-func (f *fakeDeploymentsUseCase) CreateDeployment(_ context.Context, req deployments.CreateDeployment) (deployments.Deployment, error) {
+func (f *fakeDeploymentsUseCase) CreateDeployment(_ context.Context, req types.CreateDeployment) (types.Deployment, error) {
 	f.create = req
 	if f.createErr != nil {
-		return deployments.Deployment{}, f.createErr
+		return types.Deployment{}, f.createErr
 	}
 	return f.deployment, nil
 }
 
-func (f *fakeDeploymentsUseCase) FindDeploymentByID(_ context.Context, _ string) (deployments.Deployment, error) {
+func (f *fakeDeploymentsUseCase) FindDeploymentByID(_ context.Context, _ string) (types.Deployment, error) {
 	if f.findErr != nil {
-		return deployments.Deployment{}, f.findErr
+		return types.Deployment{}, f.findErr
 	}
 	return f.deployment, nil
 }
 
-func (f *fakeDeploymentsUseCase) DeploymentEventsByDeploymentID(_ context.Context, _ string) ([]deployments.DeploymentEvent, error) {
+func (f *fakeDeploymentsUseCase) DeploymentEventsByDeploymentID(_ context.Context, _ string) ([]types.DeploymentEvent, error) {
 	if f.eventsErr != nil {
 		return nil, f.eventsErr
 	}
 	return f.events, nil
 }
 
-func validDeployment() deployments.Deployment {
+func validDeployment() types.Deployment {
 	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	risk := "customer-facing rollout"
-	return deployments.Deployment{
+	return types.Deployment{
 		ID:           "dep_123",
 		Service:      "payments",
 		Environment:  "production",
@@ -179,8 +180,8 @@ func validDeployment() deployments.Deployment {
 	}
 }
 
-func validEvent() deployments.DeploymentEvent {
-	return deployments.DeploymentEvent{
+func validEvent() types.DeploymentEvent {
+	return types.DeploymentEvent{
 		ID:           "evt_123",
 		DeploymentID: "dep_123",
 		Type:         deployments.EventDeploymentCreated,

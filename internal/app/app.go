@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 // ErrNotFound is returned when a requested record does not exist.
@@ -15,9 +16,9 @@ var ErrNotFound = errors.New("deployment not found")
 
 // DeploymentRepository persists and retrieves deployments.
 type DeploymentRepository interface {
-	CreateDeployment(context.Context, deployments.Deployment, deployments.DeploymentEvent) error
-	FindDeploymentByID(context.Context, string) (deployments.Deployment, error)
-	DeploymentEventsByDeploymentID(context.Context, string) ([]deployments.DeploymentEvent, error)
+	CreateDeployment(context.Context, types.Deployment, types.DeploymentEvent) error
+	FindDeploymentByID(context.Context, string) (types.Deployment, error)
+	DeploymentEventsByDeploymentID(context.Context, string) ([]types.DeploymentEvent, error)
 }
 
 // App coordinates domain rules with persistence.
@@ -35,28 +36,28 @@ func New(repository DeploymentRepository) *App {
 }
 
 // CreateDeployment creates and persists a deployment with its initial event.
-func (a *App) CreateDeployment(ctx context.Context, req deployments.CreateDeployment) (deployments.Deployment, error) {
+func (a *App) CreateDeployment(ctx context.Context, req types.CreateDeployment) (types.Deployment, error) {
 	now := a.now()
 	deployment, err := deployments.NewDeployment(req, now)
 	if err != nil {
-		return deployments.Deployment{}, err
+		return types.Deployment{}, err
 	}
 	event, err := deployments.NewDeploymentCreatedEvent(deployment, now)
 	if err != nil {
-		return deployments.Deployment{}, err
+		return types.Deployment{}, err
 	}
 	if err := a.repository.CreateDeployment(ctx, deployment, event); err != nil {
-		return deployments.Deployment{}, fmt.Errorf("create deployment: %w", err)
+		return types.Deployment{}, fmt.Errorf("create deployment: %w", err)
 	}
 	return deployment, nil
 }
 
 // FindDeploymentByID returns a deployment by ID.
-func (a *App) FindDeploymentByID(ctx context.Context, id string) (deployments.Deployment, error) {
+func (a *App) FindDeploymentByID(ctx context.Context, id string) (types.Deployment, error) {
 	return a.repository.FindDeploymentByID(ctx, id)
 }
 
 // DeploymentEventsByDeploymentID returns deployment events oldest first.
-func (a *App) DeploymentEventsByDeploymentID(ctx context.Context, id string) ([]deployments.DeploymentEvent, error) {
+func (a *App) DeploymentEventsByDeploymentID(ctx context.Context, id string) ([]types.DeploymentEvent, error) {
 	return a.repository.DeploymentEventsByDeploymentID(ctx, id)
 }

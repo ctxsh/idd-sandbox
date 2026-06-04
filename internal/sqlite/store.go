@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/unionai/idd-sandbox/internal/app"
-	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 
 	// Register the pure-Go SQLite driver used by Open.
 	_ "modernc.org/sqlite"
@@ -88,7 +88,7 @@ CREATE INDEX IF NOT EXISTS deployment_events_deployment_id_created_at_idx
 }
 
 // CreateDeployment persists a deployment and event in one transaction.
-func (s *Store) CreateDeployment(ctx context.Context, deployment deployments.Deployment, event deployments.DeploymentEvent) error {
+func (s *Store) CreateDeployment(ctx context.Context, deployment types.Deployment, event types.DeploymentEvent) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin create deployment transaction: %w", err)
@@ -115,17 +115,17 @@ func (s *Store) CreateDeployment(ctx context.Context, deployment deployments.Dep
 }
 
 // FindDeploymentByID returns a deployment by ID.
-func (s *Store) FindDeploymentByID(ctx context.Context, id string) (deployments.Deployment, error) {
+func (s *Store) FindDeploymentByID(ctx context.Context, id string) (types.Deployment, error) {
 	row := s.db.QueryRowContext(ctx, deploymentSelectQuery()+` WHERE id = ?`, id)
 	deployment, err := scanDeployment(row)
 	if err != nil {
-		return deployments.Deployment{}, err
+		return types.Deployment{}, err
 	}
 	return deployment, nil
 }
 
 // DeploymentEventsByDeploymentID returns deployment events oldest first.
-func (s *Store) DeploymentEventsByDeploymentID(ctx context.Context, deploymentID string) ([]deployments.DeploymentEvent, error) {
+func (s *Store) DeploymentEventsByDeploymentID(ctx context.Context, deploymentID string) ([]types.DeploymentEvent, error) {
 	if _, err := s.FindDeploymentByID(ctx, deploymentID); err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ ORDER BY created_at ASC, id ASC
 		_ = rows.Close()
 	}()
 
-	var events []deployments.DeploymentEvent
+	var events []types.DeploymentEvent
 	for rows.Next() {
 		event, err := scanDeploymentEvent(rows)
 		if err != nil {
@@ -161,7 +161,7 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func insertDeployment(ctx context.Context, tx *sql.Tx, deployment deployments.Deployment) error {
+func insertDeployment(ctx context.Context, tx *sql.Tx, deployment types.Deployment) error {
 	referencesJSON, err := json.Marshal(deployment.References)
 	if err != nil {
 		return fmt.Errorf("marshal deployment references: %w", err)
@@ -195,7 +195,7 @@ INSERT INTO deployments (
 	return nil
 }
 
-func insertDeploymentEvent(ctx context.Context, tx *sql.Tx, event deployments.DeploymentEvent) error {
+func insertDeploymentEvent(ctx context.Context, tx *sql.Tx, event types.DeploymentEvent) error {
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO deployment_events (id, deployment_id, type, actor, note, created_at)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -220,8 +220,8 @@ SELECT id, service, environment, version, status, requested_by, reviewed_by, rev
 FROM deployments`
 }
 
-func scanDeployment(row rowScanner) (deployments.Deployment, error) {
-	var deployment deployments.Deployment
+func scanDeployment(row rowScanner) (types.Deployment, error) {
+	var deployment types.Deployment
 	var reviewedBy sql.NullString
 	var reviewedAt sql.NullString
 	var referencesJSON string
@@ -251,51 +251,51 @@ func scanDeployment(row rowScanner) (deployments.Deployment, error) {
 		&rolledBackAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return deployments.Deployment{}, app.ErrNotFound
+		return types.Deployment{}, app.ErrNotFound
 	}
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("scan deployment: %w", err)
+		return types.Deployment{}, fmt.Errorf("scan deployment: %w", err)
 	}
 
 	if err := json.Unmarshal([]byte(referencesJSON), &deployment.References); err != nil {
-		return deployments.Deployment{}, fmt.Errorf("unmarshal deployment references: %w", err)
+		return types.Deployment{}, fmt.Errorf("unmarshal deployment references: %w", err)
 	}
 	deployment.ReviewedBy = stringPtrFromNull(reviewedBy)
 	deployment.Risk = stringPtrFromNull(risk)
 
 	parsedCreatedAt, err := parseTime(createdAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment created_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment created_at: %w", err)
 	}
 	deployment.CreatedAt = parsedCreatedAt
 	parsedUpdatedAt, err := parseTime(updatedAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment updated_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment updated_at: %w", err)
 	}
 	deployment.UpdatedAt = parsedUpdatedAt
 
 	deployment.ReviewedAt, err = timePtrFromNull(reviewedAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment reviewed_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment reviewed_at: %w", err)
 	}
 	deployment.StartedAt, err = timePtrFromNull(startedAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment started_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment started_at: %w", err)
 	}
 	deployment.CompletedAt, err = timePtrFromNull(completedAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment completed_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment completed_at: %w", err)
 	}
 	deployment.RolledBackAt, err = timePtrFromNull(rolledBackAt)
 	if err != nil {
-		return deployments.Deployment{}, fmt.Errorf("parse deployment rolled_back_at: %w", err)
+		return types.Deployment{}, fmt.Errorf("parse deployment rolled_back_at: %w", err)
 	}
 
 	return deployment, nil
 }
 
-func scanDeploymentEvent(row rowScanner) (deployments.DeploymentEvent, error) {
-	var event deployments.DeploymentEvent
+func scanDeploymentEvent(row rowScanner) (types.DeploymentEvent, error) {
+	var event types.DeploymentEvent
 	var note sql.NullString
 	var createdAt string
 
@@ -308,15 +308,15 @@ func scanDeploymentEvent(row rowScanner) (deployments.DeploymentEvent, error) {
 		&createdAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return deployments.DeploymentEvent{}, app.ErrNotFound
+		return types.DeploymentEvent{}, app.ErrNotFound
 	}
 	if err != nil {
-		return deployments.DeploymentEvent{}, fmt.Errorf("scan deployment event: %w", err)
+		return types.DeploymentEvent{}, fmt.Errorf("scan deployment event: %w", err)
 	}
 	event.Note = stringPtrFromNull(note)
 	parsedCreatedAt, err := parseTime(createdAt)
 	if err != nil {
-		return deployments.DeploymentEvent{}, fmt.Errorf("parse deployment event created_at: %w", err)
+		return types.DeploymentEvent{}, fmt.Errorf("parse deployment event created_at: %w", err)
 	}
 	event.CreatedAt = parsedCreatedAt
 	return event, nil

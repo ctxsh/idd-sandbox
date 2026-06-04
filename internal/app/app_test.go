@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 func TestAppCreateDeploymentBuildsDomainRecordsAndPersistsThem(t *testing.T) {
@@ -38,7 +39,7 @@ func TestAppCreateDeploymentReturnsValidationErrorsBeforePersistence(t *testing.
 	repository := &fakeRepository{}
 	application := New(repository)
 
-	_, err := application.CreateDeployment(context.Background(), deployments.CreateDeployment{})
+	_, err := application.CreateDeployment(context.Background(), types.CreateDeployment{})
 	var validationErr *deployments.ValidationError
 	if !errors.As(err, &validationErr) {
 		t.Fatalf("CreateDeployment() error = %v, want ValidationError", err)
@@ -50,27 +51,27 @@ func TestAppCreateDeploymentReturnsValidationErrorsBeforePersistence(t *testing.
 
 type fakeRepository struct {
 	createCalled bool
-	deployment   deployments.Deployment
-	event        deployments.DeploymentEvent
+	deployment   types.Deployment
+	event        types.DeploymentEvent
 }
 
-func (f *fakeRepository) CreateDeployment(_ context.Context, deployment deployments.Deployment, event deployments.DeploymentEvent) error {
+func (f *fakeRepository) CreateDeployment(_ context.Context, deployment types.Deployment, event types.DeploymentEvent) error {
 	f.createCalled = true
 	f.deployment = deployment
 	f.event = event
 	return nil
 }
 
-func (f *fakeRepository) FindDeploymentByID(_ context.Context, _ string) (deployments.Deployment, error) {
-	return deployments.Deployment{}, nil
+func (f *fakeRepository) FindDeploymentByID(_ context.Context, _ string) (types.Deployment, error) {
+	return types.Deployment{}, nil
 }
 
-func (f *fakeRepository) DeploymentEventsByDeploymentID(_ context.Context, _ string) ([]deployments.DeploymentEvent, error) {
+func (f *fakeRepository) DeploymentEventsByDeploymentID(_ context.Context, _ string) ([]types.DeploymentEvent, error) {
 	return nil, nil
 }
 
-func validCreateDeployment() deployments.CreateDeployment {
-	return deployments.CreateDeployment{
+func validCreateDeployment() types.CreateDeployment {
+	return types.CreateDeployment{
 		Service:      "payments",
 		Environment:  "production",
 		Version:      "v1.2.3",

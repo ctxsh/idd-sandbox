@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 // Deployment statuses.
@@ -30,57 +32,16 @@ func (e *ValidationError) Error() string {
 	return "validation error"
 }
 
-// Deployment is the current state of a deployment request.
-type Deployment struct {
-	ID           string
-	Service      string
-	Environment  string
-	Version      string
-	Status       string
-	RequestedBy  string
-	ReviewedBy   *string
-	ReviewedAt   *time.Time
-	References   []string
-	Risk         *string
-	RollbackPlan string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	StartedAt    *time.Time
-	CompletedAt  *time.Time
-	RolledBackAt *time.Time
-}
-
-// DeploymentEvent is an append-only lifecycle history entry.
-type DeploymentEvent struct {
-	ID           string
-	DeploymentID string
-	Type         string
-	Actor        string
-	Note         *string
-	CreatedAt    time.Time
-}
-
-// CreateDeployment is the domain input for deployment creation.
-type CreateDeployment struct {
-	Service      string
-	Environment  string
-	Version      string
-	RequestedBy  string
-	References   []string
-	Risk         string
-	RollbackPlan string
-}
-
 // NewDeployment validates creation input and returns a new pending Deployment.
-func NewDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
+func NewDeployment(req types.CreateDeployment, now time.Time) (types.Deployment, error) {
 	req = normalizeCreate(req)
 	if err := validateCreate(req); err != nil {
-		return Deployment{}, err
+		return types.Deployment{}, err
 	}
 
 	id, err := newID("dep")
 	if err != nil {
-		return Deployment{}, fmt.Errorf("generate deployment id: %w", err)
+		return types.Deployment{}, fmt.Errorf("generate deployment id: %w", err)
 	}
 
 	var risk *string
@@ -88,7 +49,7 @@ func NewDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
 		risk = &req.Risk
 	}
 
-	return Deployment{
+	return types.Deployment{
 		ID:           id,
 		Service:      req.Service,
 		Environment:  req.Environment,
@@ -104,13 +65,13 @@ func NewDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
 }
 
 // NewDeploymentCreatedEvent returns the initial event for a new Deployment.
-func NewDeploymentCreatedEvent(deployment Deployment, now time.Time) (DeploymentEvent, error) {
+func NewDeploymentCreatedEvent(deployment types.Deployment, now time.Time) (types.DeploymentEvent, error) {
 	id, err := newID("evt")
 	if err != nil {
-		return DeploymentEvent{}, fmt.Errorf("generate deployment event id: %w", err)
+		return types.DeploymentEvent{}, fmt.Errorf("generate deployment event id: %w", err)
 	}
 
-	return DeploymentEvent{
+	return types.DeploymentEvent{
 		ID:           id,
 		DeploymentID: deployment.ID,
 		Type:         EventDeploymentCreated,
@@ -119,7 +80,7 @@ func NewDeploymentCreatedEvent(deployment Deployment, now time.Time) (Deployment
 	}, nil
 }
 
-func normalizeCreate(req CreateDeployment) CreateDeployment {
+func normalizeCreate(req types.CreateDeployment) types.CreateDeployment {
 	req.Service = strings.TrimSpace(req.Service)
 	req.Environment = strings.TrimSpace(req.Environment)
 	req.Version = strings.TrimSpace(req.Version)
@@ -132,7 +93,7 @@ func normalizeCreate(req CreateDeployment) CreateDeployment {
 	return req
 }
 
-func validateCreate(req CreateDeployment) error {
+func validateCreate(req types.CreateDeployment) error {
 	fields := map[string]string{}
 	if req.Service == "" {
 		fields["service"] = "is required"

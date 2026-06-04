@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 func TestNewDeploymentProductionRequiresRisk(t *testing.T) {
@@ -39,7 +41,7 @@ func TestNewDeploymentNonProductionAllowsOmittedRisk(t *testing.T) {
 }
 
 func TestNewDeploymentRequiredFields(t *testing.T) {
-	req := CreateDeployment{}
+	req := types.CreateDeployment{}
 
 	_, err := NewDeployment(req, time.Now())
 	var validationErr *ValidationError
@@ -104,8 +106,8 @@ func TestNewDeploymentGeneratesCurrentState(t *testing.T) {
 	}
 }
 
-func validCreateDeployment() CreateDeployment {
-	return CreateDeployment{
+func validCreateDeployment() types.CreateDeployment {
+	return types.CreateDeployment{
 		Service:      "payments",
 		Environment:  "production",
 		Version:      "v1.2.3",

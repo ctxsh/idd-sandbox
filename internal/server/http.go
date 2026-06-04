@@ -9,16 +9,16 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/unionai/idd-sandbox/internal/app"
 	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 type deploymentsUseCase interface {
-	CreateDeployment(context.Context, deployments.CreateDeployment) (deployments.Deployment, error)
-	FindDeploymentByID(context.Context, string) (deployments.Deployment, error)
-	DeploymentEventsByDeploymentID(context.Context, string) ([]deployments.DeploymentEvent, error)
+	CreateDeployment(context.Context, types.CreateDeployment) (types.Deployment, error)
+	FindDeploymentByID(context.Context, string) (types.Deployment, error)
+	DeploymentEventsByDeploymentID(context.Context, string) ([]types.DeploymentEvent, error)
 }
 
 // NewHandler returns an HTTP handler for the service.
@@ -49,7 +49,7 @@ func (h *handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 			log.Printf("close request body: %v", err)
 		}
 	}()
-	var req createDeploymentRequest
+	var req types.CreateDeployment
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
@@ -61,12 +61,12 @@ func (h *handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deployment, err := h.deployments.CreateDeployment(r.Context(), req.toDomain())
+	deployment, err := h.deployments.CreateDeployment(r.Context(), req)
 	if err != nil {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, deploymentResponseFromDomain(deployment))
+	writeJSON(w, http.StatusCreated, deployment)
 }
 
 func (h *handler) getDeploymentResource(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (h *handler) getDeploymentResource(w http.ResponseWriter, r *http.Request) 
 			handleError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, eventResponsesFromDomain(events))
+		writeJSON(w, http.StatusOK, events)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *handler) getDeploymentResource(w http.ResponseWriter, r *http.Request) 
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, deploymentResponseFromDomain(deployment))
+	writeJSON(w, http.StatusOK, deployment)
 }
 
 func parseDeploymentPath(path string) (id string, eventsPath bool, ok bool) {
@@ -154,90 +154,4 @@ func decodeErrorMessage(err error) string {
 		return fmt.Sprintf("unknown field %q", field)
 	}
 	return "invalid JSON request body"
-}
-
-type createDeploymentRequest struct {
-	Service      string   `json:"service"`
-	Environment  string   `json:"environment"`
-	Version      string   `json:"version"`
-	RequestedBy  string   `json:"requested_by"`
-	References   []string `json:"references"`
-	Risk         string   `json:"risk"`
-	RollbackPlan string   `json:"rollback_plan"`
-}
-
-func (r createDeploymentRequest) toDomain() deployments.CreateDeployment {
-	return deployments.CreateDeployment{
-		Service:      r.Service,
-		Environment:  r.Environment,
-		Version:      r.Version,
-		RequestedBy:  r.RequestedBy,
-		References:   r.References,
-		Risk:         r.Risk,
-		RollbackPlan: r.RollbackPlan,
-	}
-}
-
-type deploymentResponse struct {
-	ID           string     `json:"id"`
-	Service      string     `json:"service"`
-	Environment  string     `json:"environment"`
-	Version      string     `json:"version"`
-	Status       string     `json:"status"`
-	RequestedBy  string     `json:"requested_by"`
-	ReviewedBy   *string    `json:"reviewed_by"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-	References   []string   `json:"references"`
-	Risk         *string    `json:"risk"`
-	RollbackPlan string     `json:"rollback_plan"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	StartedAt    *time.Time `json:"started_at"`
-	CompletedAt  *time.Time `json:"completed_at"`
-	RolledBackAt *time.Time `json:"rolled_back_at"`
-}
-
-func deploymentResponseFromDomain(deployment deployments.Deployment) deploymentResponse {
-	return deploymentResponse{
-		ID:           deployment.ID,
-		Service:      deployment.Service,
-		Environment:  deployment.Environment,
-		Version:      deployment.Version,
-		Status:       deployment.Status,
-		RequestedBy:  deployment.RequestedBy,
-		ReviewedBy:   deployment.ReviewedBy,
-		ReviewedAt:   deployment.ReviewedAt,
-		References:   deployment.References,
-		Risk:         deployment.Risk,
-		RollbackPlan: deployment.RollbackPlan,
-		CreatedAt:    deployment.CreatedAt,
-		UpdatedAt:    deployment.UpdatedAt,
-		StartedAt:    deployment.StartedAt,
-		CompletedAt:  deployment.CompletedAt,
-		RolledBackAt: deployment.RolledBackAt,
-	}
-}
-
-type eventResponse struct {
-	ID           string    `json:"id"`
-	DeploymentID string    `json:"deployment_id"`
-	Type         string    `json:"type"`
-	Actor        string    `json:"actor"`
-	Note         *string   `json:"note"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-func eventResponsesFromDomain(events []deployments.DeploymentEvent) []eventResponse {
-	responses := make([]eventResponse, 0, len(events))
-	for _, event := range events {
-		responses = append(responses, eventResponse{
-			ID:           event.ID,
-			DeploymentID: event.DeploymentID,
-			Type:         event.Type,
-			Actor:        event.Actor,
-			Note:         event.Note,
-			CreatedAt:    event.CreatedAt,
-		})
-	}
-	return responses
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/unionai/idd-sandbox/internal/app"
 	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/pkg/types"
 )
 
 func TestStoreCreateDeploymentPersistsDeploymentAndInitialEvent(t *testing.T) {
@@ -156,7 +157,7 @@ func openTestStore(t *testing.T) *Store {
 	return store
 }
 
-func newTestDeploymentAndEvent(t *testing.T) (deployments.Deployment, deployments.DeploymentEvent) {
+func newTestDeploymentAndEvent(t *testing.T) (types.Deployment, types.DeploymentEvent) {
 	t.Helper()
 	now := time.Now().UTC()
 	deployment, err := deployments.NewDeployment(validCreateDeployment(), now)
@@ -170,8 +171,8 @@ func newTestDeploymentAndEvent(t *testing.T) (deployments.Deployment, deployment
 	return deployment, event
 }
 
-func validCreateDeployment() deployments.CreateDeployment {
-	return deployments.CreateDeployment{
+func validCreateDeployment() types.CreateDeployment {
+	return types.CreateDeployment{
 		Service:      "payments",
 		Environment:  "production",
 		Version:      "v1.2.3",
