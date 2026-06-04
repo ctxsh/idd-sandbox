@@ -1,6 +1,6 @@
 # idd-sandbox
 
-Small Go service for tracking deployment requests.
+Small Go service for tracking deployments.
 
 ## Purpose
 
