@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/unionai/idd-sandbox/internal/app"
@@ -17,6 +19,7 @@ import (
 
 type deploymentsUseCase interface {
 	CreateDeployment(context.Context, types.CreateDeployment) (types.Deployment, error)
+	ListDeployments(context.Context, types.ListDeploymentsRequest) (types.ListDeploymentsResponse, error)
 	FindDeploymentByID(context.Context, string) (types.Deployment, error)
 	DeploymentEventsByDeploymentID(context.Context, string) ([]types.DeploymentEvent, error)
 }
@@ -32,6 +35,8 @@ type handler struct {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/deployments" && r.Method == http.MethodGet:
+		h.listDeployments(w, r)
 	case r.URL.Path == "/deployments" && r.Method == http.MethodPost:
 		h.createDeployment(w, r)
 	case strings.HasPrefix(r.URL.Path, "/deployments/") && r.Method == http.MethodGet:
@@ -41,6 +46,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (h *handler) listDeployments(w http.ResponseWriter, r *http.Request) {
+	req, err := parseListDeploymentsQuery(r.URL.Query())
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	resp, err := h.deployments.ListDeployments(r.Context(), req)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *handler) createDeployment(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +113,74 @@ func (h *handler) getDeploymentResource(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, deployment)
 }
 
+func parseListDeploymentsQuery(query url.Values) (types.ListDeploymentsRequest, error) {
+	fields := map[string]string{}
+	var req types.ListDeploymentsRequest
+
+	for key, values := range query {
+		if !isSupportedListQueryKey(key) {
+			fields[key] = "is not supported"
+			continue
+		}
+		if len(values) != 1 {
+			fields[key] = "must be specified once"
+			continue
+		}
+
+		value := values[0]
+		switch key {
+		case "service":
+			req.Service = value
+		case "environment":
+			req.Environment = value
+		case "status":
+			req.Status = value
+		case "limit":
+			limit, ok := parseListInteger(fields, key, value)
+			if ok {
+				if limit < 1 || limit > 100 {
+					fields[key] = "must be between 1 and 100"
+				}
+				req.Limit = limit
+			}
+		case "offset":
+			offset, ok := parseListInteger(fields, key, value)
+			if ok {
+				if offset < 0 {
+					fields[key] = "must be greater than or equal to 0"
+				}
+				req.Offset = offset
+			}
+		}
+	}
+	if len(fields) > 0 {
+		return types.ListDeploymentsRequest{}, &deployments.ValidationError{Fields: fields}
+	}
+	return deployments.NormalizeListDeployments(req)
+}
+
+func isSupportedListQueryKey(key string) bool {
+	switch key {
+	case "service", "environment", "status", "limit", "offset":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseListInteger(fields map[string]string, key string, value string) (int, bool) {
+	if strings.TrimSpace(value) == "" {
+		fields[key] = "cannot be empty"
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		fields[key] = "must be an integer"
+		return 0, false
+	}
+	return parsed, true
+}
+
 func parseDeploymentPath(path string) (id string, eventsPath bool, ok bool) {
 	if path == "" {
 		return "", false, false
@@ -140,7 +227,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func methodNotAllowed(w http.ResponseWriter) {
-	w.Header().Set("Allow", http.MethodPost)
+	w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{
 		"error":   "method_not_allowed",
 		"message": "method not allowed",

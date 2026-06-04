@@ -168,6 +168,29 @@ Events are append-only and returned oldest first for a deployment.
 `GET /deployments` should support filtering by `service`, `environment`, and
 `status`, with limit-based pagination.
 
+Implemented query parameters:
+
+- `service`: exact current-state service filter.
+- `environment`: exact current-state environment filter.
+- `status`: exact current-state lifecycle status filter.
+- `limit`: page size, defaults to `50`, maximum `100`.
+- `offset`: zero-based row offset, defaults to `0`.
+
+Responses use this envelope:
+
+```json
+{
+  "items": [],
+  "limit": 50,
+  "offset": 0,
+  "next_offset": null
+}
+```
+
+`items` contains full deployment records ordered by `created_at DESC, id DESC`.
+`next_offset` is `offset + limit` when a full page is returned; otherwise it is
+`null`.
+
 Invalid lifecycle transitions should return an explicit conflict error. Missing
 or invalid request data should return a validation error.
 

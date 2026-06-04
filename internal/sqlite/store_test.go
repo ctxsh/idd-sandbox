@@ -107,6 +107,111 @@ VALUES (?, ?, ?, ?, ?, ?)
 	}
 }
 
+func TestStoreListDeploymentsOrdersNewestFirst(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	insertTestDeployment(t, store, testDeployment("dep_old", "payments", "production", deployments.StatusPendingApproval, time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)))
+	insertTestDeployment(t, store, testDeployment("dep_a", "payments", "production", deployments.StatusPendingApproval, time.Date(2026, 6, 3, 13, 0, 0, 0, time.UTC)))
+	insertTestDeployment(t, store, testDeployment("dep_z", "billing", "staging", deployments.StatusStarted, time.Date(2026, 6, 3, 13, 0, 0, 0, time.UTC)))
+
+	resp, err := store.ListDeployments(ctx, types.ListDeploymentsRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListDeployments() error = %v, want nil", err)
+	}
+	assertDeploymentIDs(t, resp.Items, []string{"dep_z", "dep_a", "dep_old"})
+	if resp.NextOffset != nil {
+		t.Fatalf("NextOffset = %v, want nil", *resp.NextOffset)
+	}
+}
+
+func TestStoreListDeploymentsFilters(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	insertTestDeployment(t, store, testDeployment("dep_payments_prod_pending", "payments", "production", deployments.StatusPendingApproval, base))
+	insertTestDeployment(t, store, testDeployment("dep_payments_staging_started", "payments", "staging", deployments.StatusStarted, base.Add(time.Minute)))
+	insertTestDeployment(t, store, testDeployment("dep_billing_prod_started", "billing", "production", deployments.StatusStarted, base.Add(2*time.Minute)))
+
+	tests := []struct {
+		name string
+		req  types.ListDeploymentsRequest
+		want []string
+	}{
+		{
+			name: "service",
+			req:  types.ListDeploymentsRequest{Service: "payments", Limit: 10},
+			want: []string{"dep_payments_staging_started", "dep_payments_prod_pending"},
+		},
+		{
+			name: "environment",
+			req:  types.ListDeploymentsRequest{Environment: "production", Limit: 10},
+			want: []string{"dep_billing_prod_started", "dep_payments_prod_pending"},
+		},
+		{
+			name: "status",
+			req:  types.ListDeploymentsRequest{Status: deployments.StatusStarted, Limit: 10},
+			want: []string{"dep_billing_prod_started", "dep_payments_staging_started"},
+		},
+		{
+			name: "combined",
+			req: types.ListDeploymentsRequest{
+				Service:     "payments",
+				Environment: "staging",
+				Status:      deployments.StatusStarted,
+				Limit:       10,
+			},
+			want: []string{"dep_payments_staging_started"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := store.ListDeployments(ctx, tt.req)
+			if err != nil {
+				t.Fatalf("ListDeployments() error = %v, want nil", err)
+			}
+			assertDeploymentIDs(t, resp.Items, tt.want)
+		})
+	}
+}
+
+func TestStoreListDeploymentsPaginates(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	insertTestDeployment(t, store, testDeployment("dep_1", "payments", "production", deployments.StatusPendingApproval, base))
+	insertTestDeployment(t, store, testDeployment("dep_2", "payments", "production", deployments.StatusPendingApproval, base.Add(time.Minute)))
+	insertTestDeployment(t, store, testDeployment("dep_3", "payments", "production", deployments.StatusPendingApproval, base.Add(2*time.Minute)))
+
+	first, err := store.ListDeployments(ctx, types.ListDeploymentsRequest{Limit: 2})
+	if err != nil {
+		t.Fatalf("ListDeployments() first page error = %v, want nil", err)
+	}
+	assertDeploymentIDs(t, first.Items, []string{"dep_3", "dep_2"})
+	if first.NextOffset == nil || *first.NextOffset != 2 {
+		t.Fatalf("first NextOffset = %v, want 2", first.NextOffset)
+	}
+
+	second, err := store.ListDeployments(ctx, types.ListDeploymentsRequest{Limit: 2, Offset: 2})
+	if err != nil {
+		t.Fatalf("ListDeployments() second page error = %v, want nil", err)
+	}
+	assertDeploymentIDs(t, second.Items, []string{"dep_1"})
+	if second.NextOffset != nil {
+		t.Fatalf("second NextOffset = %v, want nil", *second.NextOffset)
+	}
+
+	empty, err := store.ListDeployments(ctx, types.ListDeploymentsRequest{Limit: 2, Offset: 10})
+	if err != nil {
+		t.Fatalf("ListDeployments() empty page error = %v, want nil", err)
+	}
+	assertDeploymentIDs(t, empty.Items, []string{})
+	if empty.NextOffset != nil {
+		t.Fatalf("empty NextOffset = %v, want nil", *empty.NextOffset)
+	}
+}
+
 func TestStoreMissingIDsReturnNotFound(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -169,6 +274,49 @@ func newTestDeploymentAndEvent(t *testing.T) (types.Deployment, types.Deployment
 		t.Fatalf("NewDeploymentCreatedEvent() error = %v, want nil", err)
 	}
 	return deployment, event
+}
+
+func testDeployment(id string, service string, environment string, status string, createdAt time.Time) types.Deployment {
+	risk := "customer-facing rollout"
+	return types.Deployment{
+		ID:           id,
+		Service:      service,
+		Environment:  environment,
+		Version:      "v1.2.3",
+		Status:       status,
+		RequestedBy:  "alice",
+		References:   []string{"https://github.com/org/repo/issues/123"},
+		Risk:         &risk,
+		RollbackPlan: "revert to v1.2.2",
+		CreatedAt:    createdAt,
+		UpdatedAt:    createdAt,
+	}
+}
+
+func insertTestDeployment(t *testing.T, store *Store, deployment types.Deployment) {
+	t.Helper()
+	event := types.DeploymentEvent{
+		ID:           "evt_" + deployment.ID,
+		DeploymentID: deployment.ID,
+		Type:         deployments.EventDeploymentCreated,
+		Actor:        deployment.RequestedBy,
+		CreatedAt:    deployment.CreatedAt,
+	}
+	if err := store.CreateDeployment(context.Background(), deployment, event); err != nil {
+		t.Fatalf("CreateDeployment(%s) error = %v, want nil", deployment.ID, err)
+	}
+}
+
+func assertDeploymentIDs(t *testing.T, deployments []types.Deployment, want []string) {
+	t.Helper()
+	if len(deployments) != len(want) {
+		t.Fatalf("deployment len = %d, want %d (%#v)", len(deployments), len(want), deployments)
+	}
+	for i, deployment := range deployments {
+		if deployment.ID != want[i] {
+			t.Fatalf("deployment[%d].ID = %q, want %q", i, deployment.ID, want[i])
+		}
+	}
 }
 
 func validCreateDeployment() types.CreateDeployment {

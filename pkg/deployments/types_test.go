@@ -106,6 +106,61 @@ func TestNewDeploymentGeneratesCurrentState(t *testing.T) {
 	}
 }
 
+func TestNormalizeListDeploymentsDefaultsAndTrims(t *testing.T) {
+	req, err := NormalizeListDeployments(types.ListDeploymentsRequest{
+		Service:     " payments ",
+		Environment: " production ",
+		Status:      " pending_approval ",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeListDeployments() error = %v, want nil", err)
+	}
+	if req.Service != "payments" {
+		t.Fatalf("Service = %q, want payments", req.Service)
+	}
+	if req.Environment != "production" {
+		t.Fatalf("Environment = %q, want production", req.Environment)
+	}
+	if req.Status != StatusPendingApproval {
+		t.Fatalf("Status = %q, want %q", req.Status, StatusPendingApproval)
+	}
+	if req.Limit != 50 {
+		t.Fatalf("Limit = %d, want 50", req.Limit)
+	}
+	if req.Offset != 0 {
+		t.Fatalf("Offset = %d, want 0", req.Offset)
+	}
+}
+
+func TestNormalizeListDeploymentsRejectsInvalidValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		req   types.ListDeploymentsRequest
+		field string
+	}{
+		{name: "empty service", req: types.ListDeploymentsRequest{Service: " "}, field: "service"},
+		{name: "empty environment", req: types.ListDeploymentsRequest{Environment: " "}, field: "environment"},
+		{name: "empty status", req: types.ListDeploymentsRequest{Status: " "}, field: "status"},
+		{name: "invalid status", req: types.ListDeploymentsRequest{Status: "waiting"}, field: "status"},
+		{name: "negative limit", req: types.ListDeploymentsRequest{Limit: -1}, field: "limit"},
+		{name: "limit too high", req: types.ListDeploymentsRequest{Limit: 101}, field: "limit"},
+		{name: "negative offset", req: types.ListDeploymentsRequest{Offset: -1}, field: "offset"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeListDeployments(tt.req)
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("NormalizeListDeployments() error = %v, want ValidationError", err)
+			}
+			if validationErr.Fields[tt.field] == "" {
+				t.Fatalf("validation field %q missing in %#v", tt.field, validationErr.Fields)
+			}
+		})
+	}
+}
+
 func validCreateDeployment() types.CreateDeployment {
 	return types.CreateDeployment{
 		Service:      "payments",

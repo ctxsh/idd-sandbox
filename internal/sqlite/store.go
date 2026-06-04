@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/unionai/idd-sandbox/internal/app"
@@ -80,6 +81,9 @@ CREATE TABLE IF NOT EXISTS deployment_events (
 
 CREATE INDEX IF NOT EXISTS deployment_events_deployment_id_created_at_idx
 	ON deployment_events (deployment_id, created_at, id);
+
+CREATE INDEX IF NOT EXISTS deployments_created_at_id_idx
+	ON deployments (created_at DESC, id DESC);
 `)
 	if err != nil {
 		return fmt.Errorf("create schema: %w", err)
@@ -112,6 +116,62 @@ func (s *Store) CreateDeployment(ctx context.Context, deployment types.Deploymen
 	committed = true
 
 	return nil
+}
+
+// ListDeployments returns deployment current-state records newest first.
+func (s *Store) ListDeployments(ctx context.Context, req types.ListDeploymentsRequest) (types.ListDeploymentsResponse, error) {
+	query := deploymentSelectQuery()
+	var predicates []string
+	var args []any
+	if req.Service != "" {
+		predicates = append(predicates, "service = ?")
+		args = append(args, req.Service)
+	}
+	if req.Environment != "" {
+		predicates = append(predicates, "environment = ?")
+		args = append(args, req.Environment)
+	}
+	if req.Status != "" {
+		predicates = append(predicates, "status = ?")
+		args = append(args, req.Status)
+	}
+	if len(predicates) > 0 {
+		query += " WHERE " + strings.Join(predicates, " AND ")
+	}
+	query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+	args = append(args, req.Limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return types.ListDeploymentsResponse{}, fmt.Errorf("query deployments: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	items := []types.Deployment{}
+	for rows.Next() {
+		deployment, err := scanDeployment(rows)
+		if err != nil {
+			return types.ListDeploymentsResponse{}, err
+		}
+		items = append(items, deployment)
+	}
+	if err := rows.Err(); err != nil {
+		return types.ListDeploymentsResponse{}, fmt.Errorf("iterate deployments: %w", err)
+	}
+
+	var nextOffset *int
+	if len(items) == req.Limit {
+		next := req.Offset + req.Limit
+		nextOffset = &next
+	}
+	return types.ListDeploymentsResponse{
+		Items:      items,
+		Limit:      req.Limit,
+		Offset:     req.Offset,
+		NextOffset: nextOffset,
+	}, nil
 }
 
 // FindDeploymentByID returns a deployment by ID.

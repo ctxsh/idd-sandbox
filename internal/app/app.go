@@ -17,6 +17,7 @@ var ErrNotFound = errors.New("deployment not found")
 // DeploymentRepository persists and retrieves deployments.
 type DeploymentRepository interface {
 	CreateDeployment(context.Context, types.Deployment, types.DeploymentEvent) error
+	ListDeployments(context.Context, types.ListDeploymentsRequest) (types.ListDeploymentsResponse, error)
 	FindDeploymentByID(context.Context, string) (types.Deployment, error)
 	DeploymentEventsByDeploymentID(context.Context, string) ([]types.DeploymentEvent, error)
 }
@@ -50,6 +51,15 @@ func (a *App) CreateDeployment(ctx context.Context, req types.CreateDeployment) 
 		return types.Deployment{}, fmt.Errorf("create deployment: %w", err)
 	}
 	return deployment, nil
+}
+
+// ListDeployments returns deployment current-state records matching the request.
+func (a *App) ListDeployments(ctx context.Context, req types.ListDeploymentsRequest) (types.ListDeploymentsResponse, error) {
+	normalized, err := deployments.NormalizeListDeployments(req)
+	if err != nil {
+		return types.ListDeploymentsResponse{}, err
+	}
+	return a.repository.ListDeployments(ctx, normalized)
 }
 
 // FindDeploymentByID returns a deployment by ID.

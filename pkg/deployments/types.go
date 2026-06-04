@@ -15,6 +15,17 @@ import (
 // Deployment statuses.
 const (
 	StatusPendingApproval = "pending_approval"
+	StatusApproved        = "approved"
+	StatusRejected        = "rejected"
+	StatusStarted         = "started"
+	StatusSucceeded       = "succeeded"
+	StatusFailed          = "failed"
+	StatusRolledBack      = "rolled_back"
+)
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 100
 )
 
 // Deployment event types.
@@ -78,6 +89,60 @@ func NewDeploymentCreatedEvent(deployment types.Deployment, now time.Time) (type
 		Actor:        deployment.RequestedBy,
 		CreatedAt:    now,
 	}, nil
+}
+
+// IsValidStatus reports whether status is part of the documented deployment lifecycle.
+func IsValidStatus(status string) bool {
+	switch status {
+	case StatusPendingApproval,
+		StatusApproved,
+		StatusRejected,
+		StatusStarted,
+		StatusSucceeded,
+		StatusFailed,
+		StatusRolledBack:
+		return true
+	default:
+		return false
+	}
+}
+
+// NormalizeListDeployments validates list filters and pagination.
+func NormalizeListDeployments(req types.ListDeploymentsRequest) (types.ListDeploymentsRequest, error) {
+	originalService := req.Service
+	originalEnvironment := req.Environment
+	originalStatus := req.Status
+
+	req.Service = strings.TrimSpace(req.Service)
+	req.Environment = strings.TrimSpace(req.Environment)
+	req.Status = strings.TrimSpace(req.Status)
+	if req.Limit == 0 {
+		req.Limit = defaultListLimit
+	}
+
+	fields := map[string]string{}
+	if originalService != "" && req.Service == "" {
+		fields["service"] = "cannot be empty"
+	}
+	if originalEnvironment != "" && req.Environment == "" {
+		fields["environment"] = "cannot be empty"
+	}
+	if originalStatus != "" && req.Status == "" {
+		fields["status"] = "cannot be empty"
+	}
+	if req.Status != "" && !IsValidStatus(req.Status) {
+		fields["status"] = "must be a valid deployment status"
+	}
+	if req.Limit < 1 || req.Limit > maxListLimit {
+		fields["limit"] = "must be between 1 and 100"
+	}
+	if req.Offset < 0 {
+		fields["offset"] = "must be greater than or equal to 0"
+	}
+	if len(fields) > 0 {
+		return types.ListDeploymentsRequest{}, &ValidationError{Fields: fields}
+	}
+	return req, nil
 }
 
 func normalizeCreate(req types.CreateDeployment) types.CreateDeployment {
