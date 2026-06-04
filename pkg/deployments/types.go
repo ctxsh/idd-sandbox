@@ -1,10 +1,9 @@
-// Package deployments owns the Deployment API domain contract and persistence.
+// Package deployments owns the Deployment domain contract and creation rules.
 package deployments
 
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -21,9 +20,6 @@ const (
 	EventDeploymentCreated = "deployment_created"
 )
 
-// ErrNotFound is returned when a deployment does not exist.
-var ErrNotFound = errors.New("deployment not found")
-
 // ValidationError reports field-specific validation failures.
 type ValidationError struct {
 	Fields map[string]string
@@ -36,46 +32,47 @@ func (e *ValidationError) Error() string {
 
 // Deployment is the current state of a deployment request.
 type Deployment struct {
-	ID           string     `json:"id"`
-	Service      string     `json:"service"`
-	Environment  string     `json:"environment"`
-	Version      string     `json:"version"`
-	Status       string     `json:"status"`
-	RequestedBy  string     `json:"requested_by"`
-	ReviewedBy   *string    `json:"reviewed_by"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-	References   []string   `json:"references"`
-	Risk         *string    `json:"risk"`
-	RollbackPlan string     `json:"rollback_plan"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	StartedAt    *time.Time `json:"started_at"`
-	CompletedAt  *time.Time `json:"completed_at"`
-	RolledBackAt *time.Time `json:"rolled_back_at"`
+	ID           string
+	Service      string
+	Environment  string
+	Version      string
+	Status       string
+	RequestedBy  string
+	ReviewedBy   *string
+	ReviewedAt   *time.Time
+	References   []string
+	Risk         *string
+	RollbackPlan string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	StartedAt    *time.Time
+	CompletedAt  *time.Time
+	RolledBackAt *time.Time
 }
 
 // DeploymentEvent is an append-only lifecycle history entry.
 type DeploymentEvent struct {
-	ID           string    `json:"id"`
-	DeploymentID string    `json:"deployment_id"`
-	Type         string    `json:"type"`
-	Actor        string    `json:"actor"`
-	Note         *string   `json:"note"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string
+	DeploymentID string
+	Type         string
+	Actor        string
+	Note         *string
+	CreatedAt    time.Time
 }
 
-// CreateDeployment is the client-provided payload for deployment creation.
+// CreateDeployment is the domain input for deployment creation.
 type CreateDeployment struct {
-	Service      string   `json:"service"`
-	Environment  string   `json:"environment"`
-	Version      string   `json:"version"`
-	RequestedBy  string   `json:"requested_by"`
-	References   []string `json:"references"`
-	Risk         string   `json:"risk"`
-	RollbackPlan string   `json:"rollback_plan"`
+	Service      string
+	Environment  string
+	Version      string
+	RequestedBy  string
+	References   []string
+	Risk         string
+	RollbackPlan string
 }
 
-func newDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
+// NewDeployment validates creation input and returns a new pending Deployment.
+func NewDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
 	req = normalizeCreate(req)
 	if err := validateCreate(req); err != nil {
 		return Deployment{}, err
@@ -106,7 +103,8 @@ func newDeployment(req CreateDeployment, now time.Time) (Deployment, error) {
 	}, nil
 }
 
-func newDeploymentCreatedEvent(deployment Deployment, now time.Time) (DeploymentEvent, error) {
+// NewDeploymentCreatedEvent returns the initial event for a new Deployment.
+func NewDeploymentCreatedEvent(deployment Deployment, now time.Time) (DeploymentEvent, error) {
 	id, err := newID("evt")
 	if err != nil {
 		return DeploymentEvent{}, fmt.Errorf("generate deployment event id: %w", err)

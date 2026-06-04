@@ -7,14 +7,16 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/unionai/idd-sandbox/pkg/deployments"
+	"github.com/unionai/idd-sandbox/internal/app"
+	"github.com/unionai/idd-sandbox/internal/server"
+	"github.com/unionai/idd-sandbox/internal/sqlite"
 )
 
 func main() {
 	addr := envOrDefault("ADDR", ":8080")
 	dbPath := envOrDefault("DEPLOYMENT_DB_PATH", "deployments.db")
 
-	store, err := deployments.OpenStore(dbPath)
+	store, err := sqlite.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open deployment store: %v", err)
 	}
@@ -24,13 +26,14 @@ func main() {
 		}
 	}()
 
-	server := &http.Server{
+	application := app.New(store)
+	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: deployments.NewHandler(store),
+		Handler: server.NewHandler(application),
 	}
 
 	log.Printf("deployment-api listening on %s", addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("serve deployment api: %v", err)
 	}
 }

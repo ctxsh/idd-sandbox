@@ -7,14 +7,14 @@ import (
 )
 
 func TestNewDeploymentProductionRequiresRisk(t *testing.T) {
-	_, err := newDeployment(validCreateDeployment(), time.Now())
+	_, err := NewDeployment(validCreateDeployment(), time.Now())
 	if err != nil {
 		t.Fatalf("newDeployment() error = %v, want nil", err)
 	}
 
 	req := validCreateDeployment()
 	req.Risk = ""
-	_, err = newDeployment(req, time.Now())
+	_, err = NewDeployment(req, time.Now())
 	var validationErr *ValidationError
 	if !errors.As(err, &validationErr) {
 		t.Fatalf("newDeployment() error = %v, want ValidationError", err)
@@ -29,7 +29,7 @@ func TestNewDeploymentNonProductionAllowsOmittedRisk(t *testing.T) {
 	req.Environment = "staging"
 	req.Risk = ""
 
-	deployment, err := newDeployment(req, time.Now())
+	deployment, err := NewDeployment(req, time.Now())
 	if err != nil {
 		t.Fatalf("newDeployment() error = %v, want nil", err)
 	}
@@ -41,7 +41,7 @@ func TestNewDeploymentNonProductionAllowsOmittedRisk(t *testing.T) {
 func TestNewDeploymentRequiredFields(t *testing.T) {
 	req := CreateDeployment{}
 
-	_, err := newDeployment(req, time.Now())
+	_, err := NewDeployment(req, time.Now())
 	var validationErr *ValidationError
 	if !errors.As(err, &validationErr) {
 		t.Fatalf("newDeployment() error = %v, want ValidationError", err)
@@ -71,7 +71,7 @@ func TestNewDeploymentInvalidReferences(t *testing.T) {
 			req := validCreateDeployment()
 			req.References = tt.references
 
-			_, err := newDeployment(req, time.Now())
+			_, err := NewDeployment(req, time.Now())
 			var validationErr *ValidationError
 			if !errors.As(err, &validationErr) {
 				t.Fatalf("newDeployment() error = %v, want ValidationError", err)
@@ -85,7 +85,7 @@ func TestNewDeploymentInvalidReferences(t *testing.T) {
 
 func TestNewDeploymentGeneratesCurrentState(t *testing.T) {
 	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
-	deployment, err := newDeployment(validCreateDeployment(), now)
+	deployment, err := NewDeployment(validCreateDeployment(), now)
 	if err != nil {
 		t.Fatalf("newDeployment() error = %v, want nil", err)
 	}
