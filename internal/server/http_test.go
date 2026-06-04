@@ -82,6 +82,109 @@ func TestHandlerPostDeploymentsRejectsGeneratedFields(t *testing.T) {
 	}
 }
 
+func TestHandlerGetDeploymentsSuccess(t *testing.T) {
+	nextOffset := 3
+	useCase := &fakeDeploymentsUseCase{
+		listResponse: types.ListDeploymentsResponse{
+			Items:      []types.Deployment{validDeployment()},
+			Limit:      2,
+			Offset:     1,
+			NextOffset: &nextOffset,
+		},
+	}
+	handler := NewHandler(useCase)
+
+	resp, body := httpRequest(t, handler, http.MethodGet, "/deployments?service=%20payments%20&environment=production&status=pending_approval&limit=2&offset=1", "")
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusOK)
+	}
+	var parsed types.ListDeploymentsResponse
+	decodeJSON(t, body, &parsed)
+	if len(parsed.Items) != 1 || parsed.Items[0].ID != "dep_123" {
+		t.Fatalf("items = %#v, want dep_123", parsed.Items)
+	}
+	if parsed.Limit != 2 || parsed.Offset != 1 || parsed.NextOffset == nil || *parsed.NextOffset != 3 {
+		t.Fatalf("pagination = limit %d offset %d next %v, want 2/1/3", parsed.Limit, parsed.Offset, parsed.NextOffset)
+	}
+	if useCase.list.Service != "payments" {
+		t.Fatalf("list Service = %q, want payments", useCase.list.Service)
+	}
+	if useCase.list.Environment != "production" {
+		t.Fatalf("list Environment = %q, want production", useCase.list.Environment)
+	}
+	if useCase.list.Status != deployments.StatusPendingApproval {
+		t.Fatalf("list Status = %q, want %q", useCase.list.Status, deployments.StatusPendingApproval)
+	}
+	if useCase.list.Limit != 2 || useCase.list.Offset != 1 {
+		t.Fatalf("list pagination = limit %d offset %d, want 2/1", useCase.list.Limit, useCase.list.Offset)
+	}
+}
+
+func TestHandlerGetDeploymentsDefaultsPagination(t *testing.T) {
+	useCase := &fakeDeploymentsUseCase{
+		listResponse: types.ListDeploymentsResponse{Items: []types.Deployment{}, Limit: 50},
+	}
+	handler := NewHandler(useCase)
+
+	resp, body := httpRequest(t, handler, http.MethodGet, "/deployments", "")
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusOK)
+	}
+	if useCase.list.Limit != 50 {
+		t.Fatalf("list Limit = %d, want default 50", useCase.list.Limit)
+	}
+	if useCase.list.Offset != 0 {
+		t.Fatalf("list Offset = %d, want default 0", useCase.list.Offset)
+	}
+}
+
+func TestHandlerGetDeploymentsRejectsInvalidQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		path  string
+		field string
+	}{
+		{name: "unsupported", path: "/deployments?version=v1", field: "version"},
+		{name: "duplicate", path: "/deployments?service=payments&service=billing", field: "service"},
+		{name: "empty service", path: "/deployments?service=%20", field: "service"},
+		{name: "invalid status", path: "/deployments?status=waiting", field: "status"},
+		{name: "malformed limit", path: "/deployments?limit=abc", field: "limit"},
+		{name: "empty limit", path: "/deployments?limit=", field: "limit"},
+		{name: "zero limit", path: "/deployments?limit=0", field: "limit"},
+		{name: "limit too high", path: "/deployments?limit=101", field: "limit"},
+		{name: "negative offset", path: "/deployments?offset=-1", field: "offset"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useCase := &fakeDeploymentsUseCase{}
+			handler := NewHandler(useCase)
+
+			resp, body := httpRequest(t, handler, http.MethodGet, tt.path, "")
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusBadRequest)
+			}
+			var parsed struct {
+				Error  string            `json:"error"`
+				Fields map[string]string `json:"fields"`
+			}
+			decodeJSON(t, body, &parsed)
+			if parsed.Error != "validation_error" {
+				t.Fatalf("error = %q, want validation_error", parsed.Error)
+			}
+			if parsed.Fields[tt.field] == "" {
+				t.Fatalf("field %q validation missing in %#v", tt.field, parsed.Fields)
+			}
+			if useCase.listCalled {
+				t.Fatal("ListDeployments called for invalid query")
+			}
+		})
+	}
+}
+
 func TestHandlerGetDeploymentSuccessAndNotFound(t *testing.T) {
 	handler := NewHandler(&fakeDeploymentsUseCase{
 		deployment: validDeployment(),
@@ -131,13 +234,30 @@ func TestHandlerGetDeploymentEventsSuccessAndNotFound(t *testing.T) {
 	assertNotFoundBody(t, notFoundBody)
 }
 
+func TestHandlerDeploymentsMethodNotAllowed(t *testing.T) {
+	handler := NewHandler(&fakeDeploymentsUseCase{})
+
+	resp, body := httpRequest(t, handler, http.MethodPut, "/deployments", "")
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d body = %s, want %d", resp.StatusCode, body, http.StatusMethodNotAllowed)
+	}
+	if resp.Header.Get("Allow") != "GET, POST" {
+		t.Fatalf("Allow = %q, want GET, POST", resp.Header.Get("Allow"))
+	}
+}
+
 type fakeDeploymentsUseCase struct {
-	create     types.CreateDeployment
-	deployment types.Deployment
-	events     []types.DeploymentEvent
-	createErr  error
-	findErr    error
-	eventsErr  error
+	create       types.CreateDeployment
+	list         types.ListDeploymentsRequest
+	deployment   types.Deployment
+	listResponse types.ListDeploymentsResponse
+	events       []types.DeploymentEvent
+	createErr    error
+	listErr      error
+	findErr      error
+	eventsErr    error
+	listCalled   bool
 }
 
 func (f *fakeDeploymentsUseCase) CreateDeployment(_ context.Context, req types.CreateDeployment) (types.Deployment, error) {
@@ -146,6 +266,15 @@ func (f *fakeDeploymentsUseCase) CreateDeployment(_ context.Context, req types.C
 		return types.Deployment{}, f.createErr
 	}
 	return f.deployment, nil
+}
+
+func (f *fakeDeploymentsUseCase) ListDeployments(_ context.Context, req types.ListDeploymentsRequest) (types.ListDeploymentsResponse, error) {
+	f.listCalled = true
+	f.list = req
+	if f.listErr != nil {
+		return types.ListDeploymentsResponse{}, f.listErr
+	}
+	return f.listResponse, nil
 }
 
 func (f *fakeDeploymentsUseCase) FindDeploymentByID(_ context.Context, _ string) (types.Deployment, error) {

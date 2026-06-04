@@ -43,3 +43,20 @@ type CreateDeployment struct {
 	Risk         string   `json:"risk"`
 	RollbackPlan string   `json:"rollback_plan"`
 }
+
+// ListDeploymentsRequest filters and paginates deployment list results.
+type ListDeploymentsRequest struct {
+	Service     string
+	Environment string
+	Status      string
+	Limit       int
+	Offset      int
+}
+
+// ListDeploymentsResponse is a page of deployment current-state records.
+type ListDeploymentsResponse struct {
+	Items      []Deployment `json:"items"`
+	Limit      int          `json:"limit"`
+	Offset     int          `json:"offset"`
+	NextOffset *int         `json:"next_offset"`
+}
